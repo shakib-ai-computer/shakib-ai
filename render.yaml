@@ -85,7 +85,9 @@ services:
     name: shakib-ai-web
     env: static
     rootDir: apps/web
-    plan: free
+    # no plan key: Render static sites are free by default, and a
+    # "plan: free" line here is rejected ("no such plan free for
+    # service type web") — verified live 2026-11-25.
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     envVars:
