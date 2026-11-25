@@ -63,12 +63,17 @@ services:
       # these. Chains below verified live on 2026-11-25: SMART primary
       # answered a real chat at cost 0; STRATEGIC primary was likewise
       # verified at cost 0 earlier the same day.
+      # WIDENED 2026-11-25 (later the same day): the live app once failed
+      # with "all models in the 'smart' chain failed: HTTP 429" because
+      # BOTH free models in the 2-model chain were rate-limited at the
+      # same moment. Each chain is now 4 free models spanning different
+      # providers, so a single provider's rate limit can't kill a chain.
       - key: MODEL_FAST
-        value: liquid/lfm-3-1.7b:free,inclusionai/ling-3.2-flash:free
+        value: liquid/lfm-3-1.7b:free,inclusionai/ling-3.2-flash:free,baidu/ernie-5.5-flash-preview:free,nvidia/nemotron-3.5-lightning:free
       - key: MODEL_SMART
-        value: baidu/ernie-5.5-flash-preview:free,google/gemma-4-31b-it:free
+        value: baidu/ernie-5.5-flash-preview:free,google/gemma-4-31b-it:free,nvidia/nemotron-3.5-lightning:free,inclusionai/ling-3.2-flash:free
       - key: MODEL_STRATEGIC
-        value: nvidia/nemotron-3-ultra-550b-a55b:free,google/gemma-4-26b-a4b-it:free
+        value: nvidia/nemotron-3-ultra-550b-a55b:free,google/gemma-4-26b-a4b-it:free,particle-ai/particle-1:free,google/gemma-4-31b-it:free
       - key: MODEL_EMBEDDING
         value: openai/text-embedding-3-small
       # --- research ---
