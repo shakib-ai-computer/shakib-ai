@@ -1,0 +1,122 @@
+# SHAKIB AI — Docker Compose (SCAFFOLD)
+#
+# Services follow the architecture plan: three runtimes (Go gateway, Python
+# core, React web) in separate containers, one PostgreSQL with two databases,
+# one Redis. All secrets come from environment variables / .env — the defaults
+# below are for LOCAL DEVELOPMENT ONLY.
+#
+# NOTE (gateway image): the exact QuantumNous/new-api image name and tag are
+# to be pinned after the pending new-api source audit. `calciumion/new-api`
+# is used here as a placeholder for the widely used upstream image.
+
+services:
+  gateway:
+    # new-api (AGPL-3.0) — runs UNMODIFIED as its own service; SHAKIB AI talks
+    # to it only over its public HTTP API. See NOTICE.md.
+    image: calciumion/new-api:latest # TODO: pin exact image/tag after source audit
+    container_name: shakib-gateway
+    restart: unless-stopped
+    environment:
+      # new-api stores its data in the `new_api` database (see infra/postgres).
+      SQL_DSN: "postgresql://${POSTGRES_USER:-shakib}:${POSTGRES_PASSWORD:-shakib_dev_password}@postgres:5432/new_api"
+      REDIS_CONN_STRING: "redis://redis:6379/1"
+      SESSION_SECRET: "${NEW_API_SESSION_SECRET:-dev-only-change-me}"
+      TZ: "${TZ:-Asia/Dhaka}"
+    ports:
+      # Admin console + /v1 API. In production the console must NOT be exposed
+      # publicly; only the Core service needs API access.
+      - "${GATEWAY_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - gateway_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3000/api/status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  postgres:
+    image: postgres:16
+    container_name: shakib-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-shakib}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-shakib_dev_password}"
+      # Primary database created by the image; the init script adds `new_api`.
+      POSTGRES_DB: "shakib_core"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shakib} -d shakib_core"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: shakib-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  core:
+    build:
+      context: ./services/core
+    container_name: shakib-core
+    restart: unless-stopped
+    environment:
+      GATEWAY_BASE_URL: "http://gateway:3000/v1"
+      GATEWAY_API_KEY: "${GATEWAY_API_KEY:-}"
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-shakib}:${POSTGRES_PASSWORD:-shakib_dev_password}@postgres:5432/shakib_core"
+      REDIS_URL: "redis://redis:6379/0"
+      JWT_SECRET: "${JWT_SECRET:-dev-only-change-me}"
+      TAVILY_API_KEY: "${TAVILY_API_KEY:-}"
+    ports:
+      - "${CORE_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  web:
+    build:
+      context: ./apps/web
+    container_name: shakib-web
+    restart: unless-stopped
+    environment:
+      # Browser talks ONLY to SHAKIB AI Core — never to the gateway directly.
+      VITE_CORE_API_URL: "${VITE_CORE_API_URL:-http://localhost:8000}"
+    ports:
+      - "${WEB_PORT:-5173}:5173"
+    depends_on:
+      - core
+
+volumes:
+  postgres_data:
+  redis_data:
+  gateway_data:
